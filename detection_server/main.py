@@ -49,6 +49,53 @@ canvas.pack(side=tk.RIGHT)
 progress = ttk.Progressbar(window, orient="horizontal", length=300, mode='determinate')
 progress.pack(side=tk.TOP, padx=20, pady=20)
 
+class ObjectTracker:
+    def __init__(self, max_distance=30):
+        self.max_distance = max_distance
+        self.tracked_objects = {}
+        self.next_id = 1
+        self.object_classes = {}
+
+    def update(self, detections):
+        current_detections = detections.xyxy
+        for i, detection in enumerate(current_detections):
+            x1, y1, x2, y2 = detection
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+
+            # Найти ближайший объект
+            min_distance = float('inf')
+            min_id = None
+            for obj_id, (prev_center_x, prev_center_y) in self.tracked_objects.items():
+                distance = np.sqrt((center_x - prev_center_x) ** 2 + (center_y - prev_center_y) ** 2)
+                if distance < min_distance:
+                    min_distance = distance
+                    min_id = obj_id
+
+            # Если ближайший объект находится в пределах допустимого расстояния, обновляем его
+            if min_distance < self.max_distance:
+                self.tracked_objects[min_id] = (center_x, center_y)
+                obj_class = detections.data['class_name'][i]
+                self.object_classes[min_id] = obj_class
+            else:
+                # Иначе создаем новый объект
+                self.tracked_objects[self.next_id] = (center_x, center_y)
+                obj_class = detections.data['class_name'][i]
+                self.object_classes[self.next_id] = obj_class
+                self.next_id += 1
+
+    def get_object_counts(self):
+        class_counts = {}
+        for obj_class in self.object_classes.values():
+            if obj_class in class_counts:
+                class_counts[obj_class] += 1
+            else:
+                class_counts[obj_class] = 1
+        return class_counts
+
+previous_frame = {}
+final_count = {}
+tracker = ObjectTracker()
 
 def load_video():
     file_path = filedialog.askopenfilename()
@@ -57,45 +104,63 @@ def load_video():
         threading.Thread(target=lambda: process_video(file_path, "output.mp4", process_frame), daemon=True).start()
 
 
-previous_frame = {}
-final_count = {}
-
-
 def process_frame(frame: np.ndarray, test: int) -> np.ndarray:
     global previous_frame
+    global tracker
+
     results = model(frame, imgsz=1280)[0]
 
     detections = sv.Detections.from_ultralytics(results)
-    print(detections.data['class_name'])
-    lst = detections.data['class_name']
-    a = list(map(lambda x: x.replace("np.str_('", '').replace("')", ''), lst))
-    dictionary = {}
-    for item in a:
-        dictionary[item] = dictionary.get(item, 0) + 1
-    if dictionary == previous_frame:
-        print(True)
-    else:
-        set1 = set(dictionary.items())
-        set2 = set(previous_frame.items())
-        diff_res = list(set1 ^ set2)
-        logger.info(diff_res)
-        print(diff_res)
-        if (len(diff_res) > 1): # То есть прям жесткая ошибка пошла, два класса полетело
-            for item in diff_res:
-                if item[0] in final_count:
-                    final_count[item[0]] = final_count[item[0]] + item[-1]
-                else:
-                    final_count[item[0]] = item[-1]
-            print("CRITICAL")
-        elif (len(diff_res) == 1) and (diff_res[0][-1] > 2): # или в одном классе появилось много вагонов:
-            final_count[[0][0]] = diff_res[0][-1]
-            print("CRITICAL")
 
-    logger.info(dictionary)
-    print(dictionary)
-    print(test)
-    print("out of " + str(final_count))
-    previous_frame = dictionary
+    tracker.update(detections)
+
+    print("New detection:", tracker.get_object_counts())
+
+    # print(detections.data['class_name'])
+    # lst = detections.data['class_name']
+    # a = list(map(lambda x: x.replace("np.str_('", '').replace("')", ''), lst))
+    #
+    # for item in a:
+    #     dictionary[item] = dictionary.get(item, 0) + 1
+    # if dictionary == previous_frame:
+    #     print(True)
+    # else:
+    #     set1 = set(dictionary.items())
+    #     set2 = set(previous_frame.items())
+    #     diff_res = list(set1 ^ set2)
+    #     logger.info(diff_res)
+    #
+    #     unique_diff_res = {}
+    #
+    #     for item in diff_res:
+    #         if item[0] in unique_diff_res:
+    #             unique_diff_res[item[0]].append(item[1])
+    #         else:
+    #             unique_diff_res[item[0]] = [item[1]]
+    #
+    #     # Преобразуем словарь в список с разницей между максимальным и минимальным значениями
+    #     unique_diff_list = [(key, max(values) - min(values)) for key, values in unique_diff_res.items()]
+    #
+    #     if (len(diff_res) > 1): # То есть прям жесткая ошибка пошла, два класса полетело
+    #         # Применяем значения из unique_diff_list к final_count
+    #         for key, value in unique_diff_list:
+    #             if key in final_count:
+    #                 final_count[key] += value
+    #             else:
+    #                 final_count[key] = dictionary[key]
+    #         print("CRITICAL")
+    #     elif (len(diff_res) == 1) and (diff_res[0][-1] > 2): # или в одном классе появилось много вагонов:
+    #         final_count[[0][0]] = diff_res[0][-1]
+    #         print("CRITICAL")
+
+
+
+    # logger.info(dictionary)
+    # print(dictionary)
+    # print(test)
+    # print("out of " + str(final_count))
+    # previous_frame = dictionary
+
     box_annotator = sv.BoundingBoxAnnotator()
 
 
@@ -114,6 +179,12 @@ def process_video(
     target_path: str,
     callback: Callable[[np.ndarray, int], np.ndarray],
 ) -> None:
+    global previous_frame
+    global final_count
+
+    previous_frame = {}
+    final_count = {}
+
     VideoInfo = sv.VideoInfo.from_video_path(source_path)
     source_video_info = VideoInfo.from_video_path(video_path=source_path)
     frame_count = int(cv2.VideoCapture(source_path).get(cv2.CAP_PROP_FRAME_COUNT))
@@ -127,6 +198,11 @@ def process_video(
                 process_frame(frame, index + 1) # Номер кадра
             sink.write_frame(frame=result_frame)
             window.after(50, update_progress, index + 1)  # Обновляем прогрессбар в основном потоке
+
+    final_count = tracker.get_object_counts()
+    print('-'*40)
+    print("Кол-во объектов: ", final_count)
+    print('-' * 40)
 
     display_video('output.mp4')
 

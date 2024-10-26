@@ -2,3 +2,9 @@
 
 # Docker
 *.env
+
+# models
+*.pt
+
+# all videos
+*.mp4
