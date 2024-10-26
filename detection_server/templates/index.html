@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Video Processor</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>Video Processor</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" name="video" accept="video/*" required>
+        <button type="submit">Upload and Process</button>
+    </form>
+    <div id="progress" style="display: none;">
+        <h3>Processing...</h3>
+    </div>
+    <video id="output-video" controls style="display: none; width: 640px; height: 480px;"></video>
+    <div id="final-count" style="display: none;"></div>
+
+    <script>
+        $('#upload-form').on('submit', function(event) {
+            event.preventDefault();
+            var formData = new FormData(this);
+            $('#progress').show();
+            $('#output-video').hide();
+            $('#final-count').hide();
+
+            $.ajax({
+                url: '/upload',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function(data) {
+                    checkProcessingStatus(data.status_url, data.video_url, data.final_count_url);
+                }
+            });
+        });
+
+        // Function to periodically check processing status
+        function checkProcessingStatus(statusUrl, videoUrl, countUrl) {
+            let interval = setInterval(function() {
+                $.getJSON(statusUrl, function(statusData) {
+                    if (statusData.processing_complete) {  // Processing is complete
+                        clearInterval(interval);  // Stop checking
+                        $('#progress').hide();
+                        $('#output-video').attr('src', videoUrl).show();
+
+                        // Fetch and display final object counts
+                        $.getJSON(countUrl, function(countData) {
+                            let formattedCount = "Кол-во объектов: " + JSON.stringify(countData)
+                                .replace(/"/g, "'") // Replace double quotes with single quotes
+                                .replace(/,/g, ', '); // Format for readability
+                            $('#final-count').text(formattedCount).show();
+                        });
+                    }
+                });
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
