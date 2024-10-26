@@ -1,0 +1,11 @@
+services:
+
+  detection_server:
+    container_name: detection_server_container
+    build:
+      context: ./detection_server
+    ports:
+      - ${PORT}:8000
+    volumes:
+      - ./detection_server:/app
+    restart: always
