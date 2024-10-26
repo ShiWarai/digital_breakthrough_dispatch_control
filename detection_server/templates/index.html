@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Video Processor</title>
+    <title>Dispatch Control</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
-    <h1>Video Processor</h1>
+    <h1>Dispatch Control</h1>
     <form id="upload-form" enctype="multipart/form-data">
         <input type="file" name="video" accept="video/*" required>
         <button type="submit">Upload and Process</button>
@@ -14,7 +14,7 @@
     <div id="progress" style="display: none;">
         <h3>Processing...</h3>
     </div>
-    <video id="output-video" controls style="display: none; width: 640px; height: 480px;"></video>
+    <img id="output-video" style="display: none; width: 640px; height: 480px;"/>
     <div id="final-count" style="display: none;"></div>
 
     <script>

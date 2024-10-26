@@ -1,4 +1,5 @@
 .idea/
+/detection_server/__pycache__/*
 
 # Docker
 *.env

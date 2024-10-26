@@ -1,5 +1,5 @@
 # Используем официальный образ Python
-FROM python:3.12
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Устанавливаем зависимости из requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Копируем содержимое папки detection_server в контейнер
 COPY . .
