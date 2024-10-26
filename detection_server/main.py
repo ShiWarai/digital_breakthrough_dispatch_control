@@ -9,14 +9,14 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from typing import Callable
 import logging
 
-# Configure logging
-logging.basicConfig(filename="EXAMPLE.log",
-                    filemode='a',
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    level=logging.DEBUG)
-logger = logging.getLogger('urbanGUI')
-logging.info("Running Urban Planning")
+# # Configure logging
+# logging.basicConfig(filename="EXAMPLE.log",
+#                     filemode='a',
+#                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+#                     datefmt='%H:%M:%S',
+#                     level=logging.DEBUG)
+# logger = logging.getLogger('urbanGUI')
+# logging.info("Running Urban Planning")
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app)
