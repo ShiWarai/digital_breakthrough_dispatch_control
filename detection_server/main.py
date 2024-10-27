@@ -4,32 +4,27 @@ import threading
 import numpy as np
 from flask import Flask, render_template, request, redirect, url_for, Response, jsonify
 from ultralytics import YOLO
+import warnings
 import supervision as sv
 from werkzeug.utils import secure_filename
-from werkzeug.middleware.proxy_fix import ProxyFix
 from typing import Callable
 import cv2
 import shutil
+from inference import get_model
 
-# # Configure logging
-# logging.basicConfig(filename="EXAMPLE.log",
-#                     filemode='a',
-#                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-#                     datefmt='%H:%M:%S',
-#                     level=logging.DEBUG)
-# logger = logging.getLogger('urbanGUI')
-# logging.info("Running Urban Planning")
+
+warnings.filterwarnings("ignore")
 
 app = Flask(__name__, static_folder='static')
-app.wsgi_app = ProxyFix(app.wsgi_app)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable file caching if needed
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'output'
 app.config['STATIC_FOLDER'] = 'static/videos'
-processing_complete = False  # Global flag for processing status
+processing_complete = dict()
 
 
-model = YOLO("models/best.pt")
+model_trains = YOLO("models/best.pt")
+model_danger = get_model(model_id="final-zjnyf/5", api_key="oMwwId6tzG8Aga5aGVo2")
 
 
 class ObjectTracker:
@@ -73,8 +68,6 @@ class ObjectTracker:
                 class_counts[obj_class] = 1
         return class_counts
 
-
-tracker = ObjectTracker()
 final_count = {}
 
 def clear_upload_folder(upload_folder):
@@ -88,61 +81,77 @@ def clear_upload_folder(upload_folder):
         except Exception as e:
             print(f'Не удалось удалить {file_path}. Причина: {e}')
 
-def process_frame(frame: np.ndarray, index: int) -> np.ndarray:
-    global tracker
-    results = model(frame, imgsz=1280)[0]
-    detections = sv.Detections.from_ultralytics(results)
-    tracker.update(detections)
+def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, tracker_danger: ObjectTracker) -> np.ndarray:
+    results_danger = model_danger.infer(frame)[0]
+    results_trains = model_trains(frame, imgsz=1280)[0]
+
+    detections_danger = sv.Detections.from_inference(results_danger)
+    detections_trains = sv.Detections.from_ultralytics(results_trains)
+
+    tracker_danger.update(detections_danger)
+    tracker_trains.update(detections_trains)
+
+    print("New person detection:", tracker_danger.get_object_counts())
+    print("New trains detection:", tracker_trains.get_object_counts())
 
     box_annotator = sv.BoundingBoxAnnotator()
+
     label_annotator = sv.LabelAnnotator(text_color=sv.Color.BLACK)
+
     annotated_image = frame.copy()
-    annotated_image = box_annotator.annotate(annotated_image, detections=detections)
-    annotated_image = label_annotator.annotate(annotated_image, detections=detections)
+    annotated_image = box_annotator.annotate(annotated_image, detections=detections_danger)
+    annotated_image = label_annotator.annotate(annotated_image, detections=detections_danger)
+    annotated_image = box_annotator.annotate(annotated_image, detections=detections_trains)
+    annotated_image = label_annotator.annotate(annotated_image, detections=detections_trains)
     return annotated_image
 
 
-def process_video(video_path: str, output_path: str, callback: Callable[[np.ndarray, int], np.ndarray]) -> None:
+def process_video(video_path: str, output_path: str, callback: Callable[[np.ndarray, int, ObjectTracker, ObjectTracker], np.ndarray]) -> None:
     global final_count, processing_complete
-    processing_complete = False
+
+    tracker_trains = ObjectTracker()
+    tracker_danger = ObjectTracker()
 
     # Video processing logic
     video_info = sv.VideoInfo.from_video_path(video_path)
     with sv.VideoSink(target_path=output_path, video_info=video_info) as sink:
         for index, frame in enumerate(sv.get_video_frames_generator(source_path=video_path, stride=50)):
-            result_frame = callback(frame, index)
+            result_frame = callback(frame, index, tracker_trains, tracker_danger)
             sink.write_frame(frame=result_frame)
 
-    final_count = tracker.get_object_counts()
-    processing_complete = True
-
-    if os.path.exists(video_path):
-        os.remove(video_path)
+    final_count = [tracker_trains.get_object_counts(), tracker_danger.get_object_counts()]
+    processing_complete[output_path] = True
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    global processing_complete
+
     file = request.files['video']
+
     if file:
         filename = secure_filename(file.filename)
+
         video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        output_path = os.path.join(app.config['OUTPUT_FOLDER'], 'output.mp4')
+        output_path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
         file.save(video_path)
+
+        processing_complete[output_path] = False
 
         threading.Thread(target=process_video, args=(video_path, output_path, process_frame), daemon=True).start()
 
-        return jsonify({'video_url': url_for('output_video'), 'final_count_url': url_for('final_count'),
-                        'status_url': url_for('processing_status')})
+        return jsonify({'video_url': url_for('output_video', video=filename), 'final_count_url': url_for('final_count'),
+                        'status_url': url_for('processing_status', video=filename)})
     return redirect(url_for('index'))
 
 
-@app.route('/processing_status')
-def processing_status():
-    return jsonify({'processing_complete': processing_complete})
+@app.route('/processing_status/<video>')
+def processing_status(video):
+    return jsonify({'processing_complete': processing_complete[os.path.join(app.config['OUTPUT_FOLDER'], video)]})
 
 
 def generate_frames(video_path, delay=0.1):
-    while True:
+    while processing_complete[video_path]:
         cap = cv2.VideoCapture(video_path)
 
         while cap.isOpened():
@@ -162,15 +171,13 @@ def generate_frames(video_path, delay=0.1):
         cap.release()
 
 
-@app.route('/output_video')
-def output_video():
-    return Response(generate_frames('output/output.mp4'), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/output_video/<video>')
+def output_video(video: str):
+    return Response(generate_frames(os.path.join(app.config['OUTPUT_FOLDER'], video)), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @app.route('/final_count')
 def final_count():
-
-
     return jsonify(final_count)
 
 
@@ -179,9 +186,11 @@ def index():
     return render_template('index.html')
 
 
-if __name__ == '__main__':
-    clear_upload_folder(app.config['UPLOAD_FOLDER'])
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+clear_upload_folder(app.config['UPLOAD_FOLDER'])
+clear_upload_folder(app.config['OUTPUT_FOLDER'])
 
-    app.run(debug=True, threaded=True, port=8080)
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+
+if __name__ == '__main__':
+    app.run(debug=True, threaded=True, host="0.0.0.0", port=8080)
