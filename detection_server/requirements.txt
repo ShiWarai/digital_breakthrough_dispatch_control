@@ -1,0 +1,8 @@
+opencv-python
+pillow
+supervision
+numpy
+ultralytics
+flask
+inference
+waitress

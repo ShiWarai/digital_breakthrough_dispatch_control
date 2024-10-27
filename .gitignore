@@ -1,0 +1,12 @@
+/.idea
+/detection_server/__pycache__/*
+/export
+
+# Docker
+*.env
+
+# models
+*.pt
+
+# all videos
+*.mp4
