@@ -1,6 +1,8 @@
 import time
 import os
 import threading
+from collections import defaultdict
+
 import numpy as np
 from flask import Flask, render_template, request, redirect, url_for, Response, jsonify
 from ultralytics import YOLO
@@ -11,20 +13,22 @@ from typing import Callable
 import cv2
 import shutil
 from inference import get_model
-
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
+TEMP_ADDITION = 'digital_breakthrough_dispatch_control/'
+
 app = Flask(__name__, static_folder='assets')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable file caching if needed
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'output'
-app.config['STATIC_FOLDER'] = 'assets'
+app.config['UPLOAD_FOLDER'] = TEMP_ADDITION +'uploads'
+app.config['OUTPUT_FOLDER'] = TEMP_ADDITION +'output'
+app.config['STATIC_FOLDER'] = TEMP_ADDITION +'assets'
 processing_complete = dict()
 
 
-model_trains = YOLO("models/best.pt")
-model_danger = get_model(model_id="final-zjnyf/5", api_key=os.environ['ROBOFLOW_KEY'])
+model_trains = YOLO(f"{TEMP_ADDITION}models/best.pt")
+model_danger = get_model(model_id="final-zjnyf/5", api_key="oMwwId6tzG8Aga5aGVo2")
 
 
 class ObjectTracker:
@@ -68,7 +72,6 @@ class ObjectTracker:
                 class_counts[obj_class] = 1
         return class_counts
 
-final_count = {}
 
 def clear_upload_folder(upload_folder):
     for filename in os.listdir(upload_folder):
@@ -81,6 +84,10 @@ def clear_upload_folder(upload_folder):
         except Exception as e:
             print(f'Не удалось удалить {file_path}. Причина: {e}')
 
+
+by_frame_count = []
+
+
 def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, tracker_danger: ObjectTracker) -> np.ndarray:
     results_danger = model_danger.infer(frame)[0]
     results_trains = model_trains(frame, imgsz=1280)[0]
@@ -91,6 +98,8 @@ def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, 
     tracker_danger.update(detections_danger)
     tracker_trains.update(detections_trains)
 
+    if (tracker_danger.get_object_counts() != 0):
+        by_frame_count.append(tracker_danger.get_object_counts())
     print("New person detection:", tracker_danger.get_object_counts())
     print("New trains detection:", tracker_trains.get_object_counts())
 
@@ -120,7 +129,55 @@ def process_video(video_path: str, output_path: str, callback: Callable[[np.ndar
             sink.write_frame(frame=result_frame)
 
     final_count = [tracker_trains.get_object_counts(), tracker_danger.get_object_counts()]
+    generate_graph(tracker_trains.get_object_counts())
+    time_danger_graph(by_frame_count)
     processing_complete[output_path] = True
+
+
+def generate_graph(results: dict[str, int]):
+    plt.title('Вывод статистики')
+
+    labels = list(results.keys())
+    sizes = list(results.values())
+
+    fig1, ax1 = plt.subplots()
+    ax1.pie(sizes, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+    ax1.axis('equal')
+
+    plt.savefig(app.config['OUTPUT_FOLDER'] + '/graph.png')
+
+
+def time_danger_graph(data: list[dict[str, int]]):
+    if len(data) == 0:
+        pass
+
+    # Количество кадров
+    total_frames = len(data)
+    # Расчет кадров в секунду (FPS)
+    fps = 30
+    # Получение данных только для 'person'
+    person_counts = [frame.get('person', 0) for frame in data]
+
+    # Создание списка секунд, соответствующих каждому кадру
+    seconds = [i / fps for i in range(total_frames)]
+
+    # Создание графика
+    plt.figure(figsize=(10, 5))
+    plt.plot(seconds, person_counts, marker='o', linestyle='-', color='b')
+
+    # Добавление названий осей и заголовка
+    plt.xlabel('Протяженность видео')
+    plt.ylabel('Количество опасностей на путях')
+    plt.title('Временной ряд опасностей на Ж/Д путях')
+    plt.legend()
+    plt.grid(True)
+
+    # Настройка оси Y для отображения только целых чисел
+    plt.yticks(
+        range(0, max(person_counts) + 2))  # Устанавливаем метки с шагом 1, включая максимальное значение + 1 для маржи
+
+    # Показать график
+    plt.savefig(app.config['OUTPUT_FOLDER'] + '/danger_graph.png')
 
 
 @app.route('/upload', methods=['POST'])
