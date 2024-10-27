@@ -15,16 +15,16 @@ from inference import get_model
 
 warnings.filterwarnings("ignore")
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__, static_folder='assets')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable file caching if needed
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'output'
-app.config['STATIC_FOLDER'] = 'static/videos'
+app.config['STATIC_FOLDER'] = 'assets'
 processing_complete = dict()
 
 
 model_trains = YOLO("models/best.pt")
-model_danger = get_model(model_id="final-zjnyf/5", api_key="oMwwId6tzG8Aga5aGVo2")
+model_danger = get_model(model_id="final-zjnyf/5", api_key=os.environ['ROBOFLOW_KEY'])
 
 
 class ObjectTracker:

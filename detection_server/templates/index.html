@@ -1,30 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html data-bs-theme="light" lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Dispatch Control</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <title>Home - Brand</title>
+    <link rel="stylesheet" href="assets/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Montserrat:400,400i,700,700i,600,600i&amp;display=swap">
+    <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css">
+    <link rel="stylesheet" href="assets/css/styles.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
-<body>
-    <h1>Dispatch Control</h1>
-    <form id="upload-form" enctype="multipart/form-data">
-        <input type="file" name="video" accept="video/*" required>
-        <button type="submit">Upload and Process</button>
-    </form>
-    <div id="progress" style="display: none;">
-        <h3>Processing...</h3>
-    </div>
-    <img id="output-video" style="display: none; width: 640px; height: 480px;"/>
-    <div id="final-count" style="display: none;"></div>
-
+<body style="background: url('assets/img/RZD.png') center / cover, var(--bs-secondary-color);">
+    <nav class="navbar navbar-expand-lg fixed-top bg-body clean-navbar">
+        <div class="container">
+            <div></div><img src="assets/img/clipboard-image-2.png" width="123" height="64">
+            <button id="upload-button" class="btn btn-danger d-flex align-items-center" type="button" style="background: var(--bs-form-invalid-color);">
+                Загрузить видео&nbsp;<i class="far fa-arrow-alt-circle-down d-inline-flex"></i>
+            </button>
+            <input id="video-input" type="file" name="video" accept="video/*" style="display: none;" required>
+            <a class="navbar-brand logo" href="#">Диспечерский контроль</a>
+            <button class="navbar-toggler" data-bs-toggle="collapse">
+                <span class="visually-hidden">Toggle navigation</span><span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+    </nav>
+    <main class="page">
+        <div class="d-flex flex-grow-1" style="margin-top: 22px;">
+            <div class="container" style="margin: 0; height: 100%;">
+                <form id="upload-form" enctype="multipart/form-data" style="display: none;">
+                    <input id="hidden-video-input" type="file" name="video" accept="video/*" required>
+                    <button type="submit">Submit</button>
+                </form>
+                <img id="output-video" width="640" height="480">
+                <div id="final-count"></div>
+            </div>
+        </div>
+    </main>
+    <script src="assets/bootstrap/js/bootstrap.min.js"></script>
     <script>
+        $('#upload-button').on('click', function() {
+            $('#video-input').click();
+        });
+
+        $('#video-input').on('change', function(event) {
+            var file = event.target.files[0];
+            $('#hidden-video-input').prop('files', event.target.files);
+            $('#upload-form').submit();
+        });
+
         $('#upload-form').on('submit', function(event) {
             event.preventDefault();
             var formData = new FormData(this);
             $('#progress').show();
             $('#output-video').hide();
             $('#final-count').hide();
-
             $.ajax({
                 url: '/upload',
                 type: 'POST',
@@ -37,20 +66,17 @@
             });
         });
 
-        // Function to periodically check processing status
         function checkProcessingStatus(statusUrl, videoUrl, countUrl) {
             let interval = setInterval(function() {
                 $.getJSON(statusUrl, function(statusData) {
-                    if (statusData.processing_complete) {  // Processing is complete
-                        clearInterval(interval);  // Stop checking
+                    if (statusData.processing_complete) {
+                        clearInterval(interval);
                         $('#progress').hide();
                         $('#output-video').attr('src', videoUrl).show();
-
-                        // Fetch and display final object counts
                         $.getJSON(countUrl, function(countData) {
                             let formattedCount = "Кол-во объектов: " + JSON.stringify(countData)
-                                .replace(/"/g, "'") // Replace double quotes with single quotes
-                                .replace(/,/g, ', '); // Format for readability
+                                .replace(/"/g, "'")
+                                .replace(/,/g, ', ');
                             $('#final-count').text(formattedCount).show();
                         });
                     }
