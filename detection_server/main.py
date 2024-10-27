@@ -2,7 +2,7 @@ import time
 import os
 import threading
 import numpy as np
-from flask import Flask, render_template, request, redirect, url_for, Response, jsonify
+from flask import Flask, render_template, request, redirect, url_for, Response, jsonify, send_from_directory
 from ultralytics import YOLO
 import warnings
 import supervision as sv
@@ -11,6 +11,7 @@ from typing import Callable
 import cv2
 import shutil
 from inference import get_model
+import matplotlib.pyplot as plt
 
 
 warnings.filterwarnings("ignore")
@@ -81,7 +82,52 @@ def clear_upload_folder(upload_folder):
         except Exception as e:
             print(f'Не удалось удалить {file_path}. Причина: {e}')
 
-def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, tracker_danger: ObjectTracker) -> np.ndarray:
+def generate_graph(results: dict[str, int], filename: str):
+    plt.title('Вывод статистики')
+
+    labels = list(results.keys())
+    sizes = list(results.values())
+
+    fig1, ax1 = plt.subplots()
+    ax1.pie(sizes, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+    ax1.axis('equal')
+
+    plt.savefig(os.path.join(app.config['OUTPUT_FOLDER'], filename+'_graph.png'))
+
+
+def time_danger_graph(data: list[dict[str, int]], filename: str):
+    if len(data) == 0:
+        pass
+
+    # Количество кадров
+    total_frames = len(data)
+    # Расчет кадров в секунду (FPS)
+    fps = 30
+    # Получение данных только для 'person'
+    person_counts = [frame.get('person', 0) for frame in data]
+
+    # Создание списка секунд, соответствующих каждому кадру
+    seconds = [i / fps for i in range(total_frames)]
+
+    # Создание графика
+    plt.figure(figsize=(10, 5))
+    plt.plot(seconds, person_counts, marker='o', linestyle='-', color='b')
+
+    # Добавление названий осей и заголовка
+    plt.xlabel('Протяженность видео')
+    plt.ylabel('Количество опасностей на путях')
+    plt.title('Временной ряд опасностей на Ж/Д путях')
+    plt.legend()
+    plt.grid(True)
+
+    # Настройка оси Y для отображения только целых чисел
+    plt.yticks(
+        range(0, max(person_counts) + 2))  # Устанавливаем метки с шагом 1, включая максимальное значение + 1 для маржи
+
+    # Показать график
+    plt.savefig(os.path.join(app.config['OUTPUT_FOLDER'], filename+'_danger_graph.png'))
+
+def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, tracker_danger: ObjectTracker, by_frame_count: list) -> np.ndarray:
     results_danger = model_danger.infer(frame)[0]
     results_trains = model_trains(frame, imgsz=1280)[0]
 
@@ -91,6 +137,8 @@ def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, 
     tracker_danger.update(detections_danger)
     tracker_trains.update(detections_trains)
 
+    if (tracker_danger.get_object_counts() != 0):
+        by_frame_count.append(tracker_danger.get_object_counts())
     print("New person detection:", tracker_danger.get_object_counts())
     print("New trains detection:", tracker_trains.get_object_counts())
 
@@ -106,20 +154,27 @@ def process_frame(frame: np.ndarray, index: int, tracker_trains: ObjectTracker, 
     return annotated_image
 
 
-def process_video(video_path: str, output_path: str, callback: Callable[[np.ndarray, int, ObjectTracker, ObjectTracker], np.ndarray]) -> None:
+def process_video(video_path: str, output_path: str, callback: Callable[[np.ndarray, int, ObjectTracker, ObjectTracker, list], np.ndarray]) -> None:
     global final_count, processing_complete
 
+    filename = os.path.basename(output_path)
     tracker_trains = ObjectTracker()
     tracker_danger = ObjectTracker()
+    by_frame_count = []
 
     # Video processing logic
     video_info = sv.VideoInfo.from_video_path(video_path)
     with sv.VideoSink(target_path=output_path, video_info=video_info) as sink:
         for index, frame in enumerate(sv.get_video_frames_generator(source_path=video_path, stride=50)):
-            result_frame = callback(frame, index, tracker_trains, tracker_danger)
+            result_frame = callback(frame, index, tracker_trains, tracker_danger, by_frame_count)
             sink.write_frame(frame=result_frame)
 
     final_count = [tracker_trains.get_object_counts(), tracker_danger.get_object_counts()]
+    generate_graph(tracker_trains.get_object_counts(), filename)
+    time_danger_graph(by_frame_count, filename)
+
+    print("Graph: ", os.path.join(app.config['OUTPUT_FOLDER'], filename+'_graph.png'))
+
     processing_complete[output_path] = True
 
 
@@ -141,7 +196,8 @@ def upload_file():
         threading.Thread(target=process_video, args=(video_path, output_path, process_frame), daemon=True).start()
 
         return jsonify({'video_url': url_for('output_video', video=filename), 'final_count_url': url_for('final_count'),
-                        'status_url': url_for('processing_status', video=filename)})
+                        'status_url': url_for('processing_status', video=filename), 'graph_url': url_for('graph', video=filename),
+                        'danger_graph_url': url_for('danger_graph', video=filename)})
     return redirect(url_for('index'))
 
 
@@ -179,6 +235,16 @@ def output_video(video: str):
 @app.route('/final_count')
 def final_count():
     return jsonify(final_count)
+
+@app.route('/graph/<video>')
+def graph(video: str):
+    filename = f"{video}_graph.png"
+    return send_from_directory(directory=app.config['OUTPUT_FOLDER'], path=filename)
+
+@app.route('/danger_graph/<video>')
+def danger_graph(video: str):
+    filename = f"{video}_danger_graph.png"
+    return send_from_directory(directory=app.config['OUTPUT_FOLDER'], path=filename)
 
 
 @app.route('/')
