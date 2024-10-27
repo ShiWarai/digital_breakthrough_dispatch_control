@@ -24,7 +24,7 @@ processing_complete = dict()
 
 
 model_trains = YOLO("models/best.pt")
-model_danger = get_model(model_id="final-zjnyf/5", api_key=os.environ['ROBOFLOW_KEY'])
+model_danger = get_model(model_id="final-zjnyf/5", api_key=os.getenv('ROBOFLOW_KEY'))
 
 
 class ObjectTracker:
