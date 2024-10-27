@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html data-bs-theme="light" lang="en" style="position: relative;min-height: 100%;">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <title>Решение от команды RealityReimagined</title>
+    <link rel="stylesheet" href="assets/bootstrap/css/bootstrap.min.css?h=9f3738c3b02e0983f8d5f3b19c8cdd33">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Montserrat:400,400i,700,700i,600,600i&display=swap">
+    <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css?h=72206c8bac47c259a95e6473d0eef779">
+    <link rel="stylesheet" href="assets/css/styles.min.css?h=79ffa5576154df7a710b38210057feaa">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body style="background: url('assets/img/RZD.png?h=e50e290a04b573bb6b957bfd9b80dcf7') center / cover, var(--bs-secondary-color);min-height: 100%;">
+    <nav class="navbar navbar-expand-lg fixed-top bg-body clean-navbar">
+        <div class="container">
+            <div></div><img src="assets/img/clipboard-image-2.png?h=553c74dd8a0698217bdb4c3628c2b272" width="123" height="64">
+            <button id="upload-button" class="btn btn-danger d-flex align-items-center" type="button" style="background: #e21a1a;--bs-danger: #e21a1a;--bs-danger-rgb: 226,26,26;">
+                Загрузить видео&nbsp;<i class="far fa-arrow-alt-circle-down d-inline-flex"></i>
+            </button>
+            <input id="video-input" type="file" name="video" accept="video/*" style="display: none;" required>
+            <a class="navbar-brand logo" href="#" style="--bs-danger: #E21A1A;--bs-danger-rgb: 226,26,26;">Диспечерский контроль</a>
+        </div>
+    </nav>
+    <main class="page" style="height: 100%;padding-top: 120px;">
+        <div class="d-flex flex-grow-1" style="height: 100%;">
+            <div class="container d-flex" style="margin: 0;height: 100%;width: 100%;">
+                <div class="col d-flex flex-column align-items-start align-items-xl-center" style="padding: 16px; padding-left: 60px;">
+                    <form id="upload-form" enctype="multipart/form-data" style="display: none;">
+                        <input id="hidden-video-input" type="file" name="video" accept="video/*" required>
+                        <button type="submit">Submit</button>
+                    </form>
+                    <div class="fs-6 text-center div-rzhd" id="file-name" style="margin-top: 16px; display: none !important;">Загруженный файл: <span id="file-name-span"></span></div>
+                    <div id="processing-text" class="align-items-center" style="display: none !important; padding: 10px;">
+                        <div class="spinner-border text-danger" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="ms-2">Обработка...</span>
+                    </div>
+                    <img id="output-video" style="display: none !important; margin-top: 16px" width="640" height="480">
+                    <div id="final-count" class="fs-4 text-center div-rzhd" style="display: none !important;"></div>
+                </div>
+                <div class="col" style="padding-left: 64px">
+                    <img id="graph" style="display: none !important; margin-top: 16px" width="480" height="360">
+                    <img id="danger_graph" style="display: none !important; margin-top: 16px" width="480" height="360">
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="assets/bootstrap/js/bootstrap.min.js?h=374d178d651fa0eaf680a1fa7b40c788"></script>
+    <script>
+        $(document).ready(function() {
+            $('#processing-text').hide();
+        });
+
+        $('#upload-button').on('click', function() {
+            $('#video-input').click();
+        });
+
+        $('#video-input').on('change', function(event) {
+            var file = event.target.files[0];
+            $('#hidden-video-input').prop('files', event.target.files);
+            $('#file-name-span').text(file.name);  // Display file name
+            $('#upload-form').submit();
+        });
+
+        $('#upload-form').on('submit', function(event) {
+            event.preventDefault();
+            var formData = new FormData(this);
+            $('#file-name').show();
+            $('#processing-text').css('display', 'flex');
+            $('#output-video').hide();
+            $('#final-count').hide();
+            $('#graph').hide();
+            $('#danger_graph').hide();
+
+            $.ajax({
+                url: '/upload',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function(data) {
+                    checkProcessingStatus(data.status_url, data.video_url, data.final_count_url, data.graph_url, data.danger_graph_url);
+                }
+            });
+        });
+
+        function checkProcessingStatus(statusUrl, videoUrl, countUrl, graphUrl, dangerGraphUrl) {
+            let interval = setInterval(function() {
+                $.getJSON(statusUrl, function(statusData) {
+                    if (statusData.processing_complete) {
+                        clearInterval(interval);
+                        $('#processing-text').css('display', 'none');
+                        $('#output-video').attr('src', videoUrl).show();
+                        $('#graph').attr('src', graphUrl).show();
+                        $('#danger_graph').attr('src', dangerGraphUrl).show();
+                        $.getJSON(countUrl, function(countData) {
+                            let formattedCount = "Кол-во объектов: " + JSON.stringify(countData)
+                                .replace(/"/g, "'")
+                                .replace(/,/g, ', ');
+                            $('#final-count').text(formattedCount).show();
+                        });
+                    }
+                });
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
+

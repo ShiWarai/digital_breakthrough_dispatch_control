@@ -1,4 +1,6 @@
-.idea/
+/.idea
+/detection_server/__pycache__/*
+/export
 
 # Docker
 *.env

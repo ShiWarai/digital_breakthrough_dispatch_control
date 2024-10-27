@@ -5,7 +5,7 @@ services:
     build:
       context: ./detection_server
     ports:
-      - ${PORT}:8000
+      - ${PORT}:8080
     volumes:
       - ./detection_server:/app
     restart: always
